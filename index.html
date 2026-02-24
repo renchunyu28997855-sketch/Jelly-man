@@ -574,7 +574,7 @@
             const angle = Math.atan2(dy, dx);
             
             // 大幅增加挤压力度
-            const pushForce = 3.0;
+            const pushForce = 6.0;
             const pushX = Math.cos(angle) * overlap * pushForce;
             const pushY = Math.sin(angle) * overlap * pushForce;
 
@@ -585,7 +585,7 @@
 
             // 撞击速度加成
             const impactSpeed = Math.abs(this.vx - other.vx) + Math.abs(this.vy - other.vy);
-            const bounceBonus = 1.5;
+            const bounceBonus = 2.5;
             
             this.vx += Math.cos(angle) * impactSpeed * bounceBonus;
             this.vy += Math.sin(angle) * impactSpeed * bounceBonus;
