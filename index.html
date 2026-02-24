@@ -504,8 +504,13 @@
 
       handlePlatformCollision(platform) {
         const platTop = platform.y - platform.height / 2;
+        const platBottom = platform.y + platform.height / 2;
         const platLeft = platform.x - platform.width / 2;
         const platRight = platform.x + platform.width / 2;
+        
+        // 地图上下边界
+        const minY = 50;
+        const maxY = CONFIG.LOGICAL_HEIGHT - 100;
 
         // 检测是否在平台范围内
         if (this.x > platLeft && this.x < platRight) {
@@ -523,6 +528,12 @@
               this.onGround = true;
             }
           }
+          
+          // 防止从平台下方被击穿到地板下
+          if (this.y > platBottom - this.radius && this.vy > 0) {
+            this.y = platBottom - this.radius;
+            this.vy = -Math.abs(this.vy) * 0.5;
+          }
         }
         
         // 平台边缘反弹
@@ -539,6 +550,16 @@
             this.vx = -this.vx * CONFIG.BOUNCE;
             soundManager.playHit();
           }
+        }
+        
+        // 地图上下边界限制
+        if (this.y + this.radius > platBottom) {
+          this.y = platBottom - this.radius;
+          this.vy = -Math.abs(this.vy) * 0.5;
+        }
+        if (this.y - this.radius < minY) {
+          this.y = minY + this.radius;
+          this.vy = Math.abs(this.vy) * 0.5;
         }
       }
 
