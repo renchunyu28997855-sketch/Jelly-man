@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>糖豆人 - Jelly Man</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #gameContainer {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #gameCanvas {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 0 40px rgba(0, 200, 255, 0.3);
+    }
+
+    #ui {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: white;
+      font-size: 18px;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+      z-index: 10;
+    }
+
+    #soundToggle {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 16px;
+      z-index: 10;
+      transition: background 0.3s;
+    }
+
+    #soundToggle:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    #instructions {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 14px;
+      text-align: center;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+      <div id="playerCount">玩家: <span id="count">0</span></div>
+      <div id="roundInfo">回合: <span id="round">1</span></div>
+    </div>
+    <button id="soundToggle">🔊 音效: 开</button>
+    <div id="instructions">方向键/WASD 移动 | 空格 跳跃</div>
+  </div>
+
+  <script>
+    // ==================== 常量配置 ====================
+    const CONFIG = {
+      LOGICAL_WIDTH: 1920,
+      LOGICAL_HEIGHT: 1080,
+      PLAYER_COUNT: 12,
+      PLAYER_RADIUS: 35,
+      MOVE_SPEED: 8,
+      JUMP_FORCE: -18,
+      GRAVITY: 0.8,
+      FRICTION: 0.88,
+      BOUNCE: 0.4,
+      PLATFORM_WIDTH: 1600,
+      PLATFORM_HEIGHT: 200,
+      OBSTACLE_COUNT: 5,
+      ROUND_TIME: 60,
+      COUNTDOWN_TIME: 3
+    };
+
+    const COLORS = {
+      BACKGROUND: '#1a1a2e',
+      PLATFORM: '#4a4a6a',
+      PLATFORM_EDGE: '#6a6a8a',
+      PLAYER_COLORS: [
+        '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
+        '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
+        '#BB8FCE', '#85C1E9', '#F8B500', '#00CED1'
+      ],
+      TEXT: '#FFFFFF',
+      TEXT_SHADOW: 'rgba(0, 0, 0, 0.5)'
+    };
+
+    const GameState = {
+      MENU: 'menu',
+      COUNTDOWN: 'countdown',
+      PLAYING: 'playing',
+      ROUND_END: 'round_end',
+      GAME_OVER: 'game_over'
+    };
+
+    // ==================== 音效系统 ====================
+    class SoundManager {
+      constructor() {
+        this.audioContext = null;
+        this.enabled = true;
+        this.initialized = false;
+      }
+
+      init() {
+        if (this.initialized) return;
+        try {
+          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          this.initialized = true;
+        } catch (e) {
+          console.warn('Web Audio API 不支持');
+        }
+      }
+
+      playTone(frequency, duration, type = 'sine', volume = 0.3) {
+        if (!this.enabled || !this.audioContext) return;
+        
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        
+        oscillator.frequency.value = frequency;
+        oscillator.type = type;
+        
+        gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+        
+        oscillator.start();
+        oscillator.stop(this.audioContext.currentTime + duration);
+      }
+
+      playJump() {
+        this.playTone(400, 0.15, 'sine', 0.2);
+        setTimeout(() => this.playTone(600, 0.1, 'sine', 0.15), 50);
+      }
+
+      playLand() {
+        this.playTone(150, 0.1, 'triangle', 0.3);
+      }
+
+      playHit() {
+        this.playTone(200, 0.15, 'square', 0.2);
+      }
+
+      playFall() {
+        this.playTone(300, 0.3, 'sawtooth', 0.25);
+        setTimeout(() => this.playTone(200, 0.3, 'sawtooth', 0.2), 150);
+        setTimeout(() => this.playTone(100, 0.4, 'sawtooth', 0.15), 300);
+      }
+
+      playWin() {
+        const notes = [523, 659, 784, 1047];
+        notes.forEach((note, i) => {
+          setTimeout(() => this.playTone(note, 0.3, 'sine', 0.25), i * 150);
+        });
+      }
+
+      playCountdown() {
+        this.playTone(880, 0.1, 'sine', 0.2);
+      }
+
+      playButton() {
+        this.playTone(600, 0.08, 'sine', 0.15);
+      }
+
+      toggle() {
+        this.enabled = !this.enabled;
+        return this.enabled;
+      }
+    }
+
+    // ==================== 糖豆人玩家类 ====================
+    class JellyPlayer {
+      constructor(x, y, color, isPlayer = false) {
+        this.x = x;
+        this.y = y;
+        this.vx = 0;
+        this.vy = 0;
+        this.color = color;
+        this.radius = CONFIG.PLAYER_RADIUS;
+        this.isPlayer = isPlayer;
+        this.isAlive = true;
+        this.wobble = Math.random() * Math.PI * 2;
+        this.wobbleSpeed = 0.15;
+        this.scaleX = 1;
+        this.scaleY = 1;
+        this.targetX = x;
+        this.targetY = y;
+        this.onGround = false;
+        this.expression = 'normal';
+      }
+
+      update(deltaTime, platform, obstacles, players) {
+        if (!this.isAlive) return;
+
+        // 果冻摆动动画
+        this.wobble += this.wobbleSpeed * deltaTime;
+        const wobbleAmount = 0.08;
+        this.scaleX = 1 + Math.sin(this.wobble) * wobbleAmount;
+        this.scaleY = 1 - Math.sin(this.wobble) * wobbleAmount;
+
+        // 如果是玩家，响应输入
+        if (this.isPlayer) {
+          this.handleInput();
+        } else {
+          // AI 行为
+          this.handleAI(platform, obstacles, players);
+        }
+
+        // 应用重力
+        this.vy += CONFIG.GRAVITY;
+
+        // 应用摩擦力
+        this.vx *= CONFIG.FRICTION;
+
+        // 更新位置
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // 平台碰撞
+        this.handlePlatformCollision(platform);
+
+        // 障碍物碰撞
+        this.handleObstacleCollision(obstacles);
+
+        // 玩家间碰撞
+        this.handlePlayerCollision(players);
+
+        // 更新表情
+        this.updateExpression();
+
+        // 检查是否掉出平台
+        if (this.y > CONFIG.LOGICAL_HEIGHT + 100) {
+          this.eliminate();
+        }
+      }
+
+      handleInput() {
+        if (keys.ArrowLeft || keys.KeyA) this.vx -= 1.2;
+        if (keys.ArrowRight || keys.KeyD) this.vx += 1.2;
+        if ((keys.Space || keys.ArrowUp || keys.KeyW) && this.onGround) {
+          this.vy = CONFIG.JUMP_FORCE;
+          this.onGround = false;
+          soundManager.playJump();
+        }
+
+        // 限制速度
+        this.vx = Math.max(-CONFIG.MOVE_SPEED, Math.min(CONFIG.MOVE_SPEED, this.vx));
+      }
+
+      handleAI(platform, obstacles, players) {
+        // 简单的 AI 行为
+        const alivePlayers = players.filter(p => p.isAlive);
+        
+        // 寻找目标位置
+        if (Math.random() < 0.02) {
+          // 随机移动
+          this.targetX = platform.x - platform.width/2 + Math.random() * platform.width;
+          this.targetY = platform.y - platform.height/2 - 50;
+        }
+
+        // 向目标移动
+        const dx = this.targetX - this.x;
+        if (Math.abs(dx) > 20) {
+          this.vx += dx > 0 ? 0.5 : -0.5;
+        }
+
+        // 跳跃以避开障碍物
+        for (const obs of obstacles) {
+          const dist = Math.hypot(this.x - obs.x, this.y - obs.y);
+          if (dist < 150 && this.onGround) {
+            this.vy = CONFIG.JUMP_FORCE;
+            this.onGround = false;
+          }
+        }
+
+        // 限制速度
+        this.vx = Math.max(-CONFIG.MOVE_SPEED * 0.7, Math.min(CONFIG.MOVE_SPEED * 0.7, this.vx));
+
+        // 随机跳跃
+        if (this.onGround && Math.random() < 0.005) {
+          this.vy = CONFIG.JUMP_FORCE;
+          this.onGround = false;
+        }
+      }
+
+      handlePlatformCollision(platform) {
+        const platTop = platform.y - platform.height / 2;
+        const platLeft = platform.x - platform.width / 2;
+        const platRight = platform.x + platform.width / 2;
+
+        // 检测是否在平台范围内
+        if (this.x > platLeft && this.x < platRight) {
+          // 从上方落下
+          if (this.y + this.radius > platTop && 
+              this.y - this.radius < platTop + 20 &&
+              this.vy > 0) {
+            this.y = platTop - this.radius;
+            if (this.vy > 5) {
+              soundManager.playLand();
+            }
+            this.vy = -this.vy * CONFIG.BOUNCE;
+            if (Math.abs(this.vy) < 2) {
+              this.vy = 0;
+              this.onGround = true;
+            }
+          }
+        }
+      }
+
+      handleObstacleCollision(obstacles) {
+        for (const obs of obstacles) {
+          const dx = this.x - obs.x;
+          const dy = this.y - obs.y;
+          const dist = Math.hypot(dx, dy);
+          const minDist = this.radius + obs.radius;
+
+          if (dist < minDist) {
+            // 碰撞响应
+            const angle = Math.atan2(dy, dx);
+            const pushForce = 8;
+            this.vx += Math.cos(angle) * pushForce;
+            this.vy += Math.sin(angle) * pushForce;
+            soundManager.playHit();
+          }
+        }
+      }
+
+      handlePlayerCollision(players) {
+        for (const other of players) {
+          if (other === this || !other.isAlive) continue;
+
+          const dx = this.x - other.x;
+          const dy = this.y - other.y;
+          const dist = Math.hypot(dx, dy);
+          const minDist = this.radius + other.radius;
+
+          if (dist < minDist && dist > 0) {
+            // 互相推挤
+            const overlap = minDist - dist;
+            const angle = Math.atan2(dy, dx);
+            const pushX = Math.cos(angle) * overlap * 0.5;
+            const pushY = Math.sin(angle) * overlap * 0.5;
+
+            this.x += pushX;
+            this.y += pushY;
+            other.x -= pushX;
+            other.y -= pushY;
+
+            // 交换速度（弹性碰撞）
+            const tempVx = this.vx;
+            const tempVy = this.vy;
+            this.vx = other.vx * 0.8;
+            this.vy = other.vy * 0.8;
+            other.vx = tempVx * 0.8;
+            other.vy = tempVy * 0.8;
+          }
+        }
+      }
+
+      updateExpression() {
+        if (!this.isAlive) {
+          this.expression = 'dead';
+        } else if (Math.abs(this.vy) > 8) {
+          this.expression = 'surprised';
+        } else if (Math.abs(this.vx) > CONFIG.MOVE_SPEED * 0.8) {
+          this.expression = 'excited';
+        } else {
+          this.expression = 'normal';
+        }
+      }
+
+      eliminate() {
+        this.isAlive = false;
+        soundManager.playFall();
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.scale(this.scaleX, this.scaleY);
+
+        // 绘制身体（果冻形状）
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        
+        // 渐变填充
+        const gradient = ctx.createRadialGradient(
+          -this.radius * 0.3, -this.radius * 0.3, 0,
+          0, 0, this.radius
+        );
+        gradient.addColorStop(0, this.lightenColor(this.color, 40));
+        gradient.addColorStop(0.7, this.color);
+        gradient.addColorStop(1, this.darkenColor(this.color, 20));
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        // 身体轮廓
+        ctx.strokeStyle = this.darkenColor(this.color, 30);
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // 绘制眼睛
+        this.drawEyes(ctx);
+
+        ctx.restore();
+      }
+
+      drawEyes(ctx) {
+        const eyeOffsetX = 12;
+        const eyeOffsetY = -5;
+        const eyeRadius = 10;
+        const pupilRadius = 5;
+
+        // 根据速度计算视线偏移
+        let lookX = this.vx * 1.5;
+        let lookY = this.vy * 0.5;
+
+        if (this.expression === 'surprised') {
+          lookY = -5;
+        } else if (this.expression === 'excited') {
+          lookX = this.vx > 0 ? 3 : -3;
+        }
+
+        // 左眼
+        ctx.beginPath();
+        ctx.arc(-eyeOffsetX, eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 左瞳孔
+        ctx.beginPath();
+        ctx.arc(-eyeOffsetX + lookX, eyeOffsetY + lookY, pupilRadius, 0, Math.PI * 2);
+        ctx.fillStyle = '#333';
+        ctx.fill();
+
+        // 右眼
+        ctx.beginPath();
+        ctx.arc(eyeOffsetX, eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.stroke();
+
+        // 右瞳孔
+        ctx.beginPath();
+        ctx.arc(eyeOffsetX + lookX, eyeOffsetY + lookY, pupilRadius, 0, Math.PI * 2);
+        ctx.fillStyle = '#333';
+        ctx.fill();
+
+        // 表情
+        if (this.expression === 'surprised') {
+          // 惊讶 - 张大嘴巴
+          ctx.beginPath();
+          ctx.arc(0, 12, 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#FF6B6B';
+          ctx.fill();
+        } else if (this.expression === 'dead') {
+          // 死亡 - X 眼睛
+          ctx.strokeStyle = '#333';
+          ctx.lineWidth = 2;
+          
+          // 左眼 X
+          ctx.beginPath();
+          ctx.moveTo(-eyeOffsetX - 5, eyeOffsetY - 5);
+          ctx.lineTo(-eyeOffsetX + 5, eyeOffsetY + 5);
+          ctx.moveTo(-eyeOffsetX + 5, eyeOffsetY - 5);
+          ctx.lineTo(-eyeOffsetX - 5, eyeOffsetY + 5);
+          ctx.stroke();
+
+          // 右眼 X
+          ctx.beginPath();
+          ctx.moveTo(eyeOffsetX - 5, eyeOffsetY - 5);
+          ctx.lineTo(eyeOffsetX + 5, eyeOffsetY + 5);
+          ctx.moveTo(eyeOffsetX + 5, eyeOffsetY - 5);
+          ctx.lineTo(eyeOffsetX - 5, eyeOffsetY + 5);
+          ctx.stroke();
+        }
+      }
+
+      lightenColor(color, percent) {
+        const num = parseInt(color.replace('#', ''), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = Math.min(255, (num >> 16) + amt);
+        const G = Math.min(255, ((num >> 8) & 0x00FF) + amt);
+        const B = Math.min(255, (num & 0x0000FF) + amt);
+        return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+      }
+
+      darkenColor(color, percent) {
+        const num = parseInt(color.replace('#', ''), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = Math.max(0, (num >> 16) - amt);
+        const G = Math.max(0, ((num >> 8) & 0x00FF) - amt);
+        const B = Math.max(0, (num & 0x0000FF) - amt);
+        return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+      }
+    }
+
+    // ==================== 障碍物类 ====================
+    class Obstacle {
+      constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.type = type;
+        this.angle = 0;
+        
+        if (type === 'spinner') {
+          this.radius = 60;
+          this.rotationSpeed = 0.03;
+        } else if (type === 'swing') {
+          this.radius = 40;
+          this.swingAngle = 0;
+          this.swingSpeed = 0.05;
+          this.swingAmplitude = 150;
+        }
+      }
+
+      update(deltaTime) {
+        if (this.type === 'spinner') {
+          this.angle += this.rotationSpeed * deltaTime;
+        } else if (this.type === 'swing') {
+          this.swingAngle += this.swingSpeed * deltaTime;
+          this.y = 450 + Math.sin(this.swingAngle) * this.swingAmplitude;
+        }
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        if (this.type === 'spinner') {
+          ctx.rotate(this.angle);
+          
+          // 绘制旋转风车
+          const armCount = 4;
+          for (let i = 0; i < armCount; i++) {
+            ctx.save();
+            ctx.rotate((Math.PI * 2 / armCount) * i);
+            
+            // 手臂
+            ctx.fillStyle = '#FF6B6B';
+            ctx.fillRect(-10, -this.radius, 20, this.radius * 1.5);
+            
+            // 末端球
+            ctx.beginPath();
+            ctx.arc(0, -this.radius, 25, 0, Math.PI * 2);
+            ctx.fillStyle = '#FF6B6B';
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            ctx.restore();
+          }
+
+          // 中心
+          ctx.beginPath();
+          ctx.arc(0, 0, 20, 0, Math.PI * 2);
+          ctx.fillStyle = '#fff';
+          ctx.fill();
+
+        } else if (this.type === 'swing') {
+          // 绘制摆动球
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+          const gradient = ctx.createRadialGradient(-10, -10, 0, 0, 0, this.radius);
+          gradient.addColorStop(0, '#FFE66D');
+          gradient.addColorStop(1, '#F7B731');
+          ctx.fillStyle = gradient;
+          ctx.fill();
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+
+          // 绳子
+          ctx.beginPath();
+          ctx.moveTo(0, -this.radius);
+          ctx.lineTo(0, -this.y + 300);
+          ctx.strokeStyle = '#888';
+          ctx.lineWidth = 4;
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+    }
+
+    // ==================== 游戏主类 ====================
+    class Game {
+      constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.state = GameState.MENU;
+        this.players = [];
+        this.obstacles = [];
+        this.platform = null;
+        this.round = 1;
+        this.timeLeft = CONFIG.ROUND_TIME;
+        this.countdown = CONFIG.COUNTDOWN_TIME;
+        this.lastTime = 0;
+        
+        this.initCanvas();
+        this.initPlatform();
+        this.initObstacles();
+        this.initInput();
+        
+        // 启动游戏循环
+        this.gameLoop(0);
+      }
+
+      initCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        this.canvas.width = CONFIG.LOGICAL_WIDTH * dpr;
+        this.canvas.height = CONFIG.LOGICAL_HEIGHT * dpr;
+        this.ctx.scale(dpr, dpr);
+        this.canvas.style.width = CONFIG.LOGICAL_WIDTH + 'px';
+        this.canvas.style.height = CONFIG.LOGICAL_HEIGHT + 'px';
+      }
+
+      initPlatform() {
+        this.platform = {
+          x: CONFIG.LOGICAL_WIDTH / 2,
+          y: CONFIG.LOGICAL_HEIGHT - 200,
+          width: CONFIG.PLATFORM_WIDTH,
+          height: CONFIG.PLATFORM_HEIGHT
+        };
+      }
+
+      initObstacles() {
+        this.obstacles = [];
+        
+        // 添加旋转风车
+        for (let i = 0; i < 2; i++) {
+          this.obstacles.push(new Obstacle(
+            CONFIG.LOGICAL_WIDTH / 2 - 300 + i * 600,
+            350,
+            'spinner'
+          ));
+        }
+
+        // 添加摆动球
+        for (let i = 0; i < 3; i++) {
+          this.obstacles.push(new Obstacle(
+            CONFIG.LOGICAL_WIDTH / 2 - 200 + i * 200,
+            450,
+            'swing'
+          ));
+        }
+      }
+
+      initInput() {
+        window.keys = {};
+        
+        window.addEventListener('keydown', (e) => {
+          window.keys[e.code] = true;
+          
+          // 初始化音效（浏览器策略要求用户交互）
+          soundManager.init();
+          
+          if (this.state === GameState.MENU || 
+              this.state === GameState.GAME_OVER) {
+            this.startGame();
+          }
+        });
+
+        window.addEventListener('keyup', (e) => {
+          window.keys[e.code] = false;
+        });
+
+        // 音效开关
+        document.getElementById('soundToggle').addEventListener('click', () => {
+          soundManager.init();
+          const enabled = soundManager.toggle();
+          document.getElementById('soundToggle').textContent = 
+            enabled ? '🔊 音效: 开' : '🔇 音效: 关';
+          soundManager.playButton();
+        });
+      }
+
+      startGame() {
+        this.players = [];
+        
+        // 创建玩家（第一个是人类玩家）
+        for (let i = 0; i < CONFIG.PLAYER_COUNT; i++) {
+          const x = this.platform.x - this.platform.width/2 + 100 + i * 120;
+          const y = this.platform.y - this.platform.height/2 - 100;
+          const player = new JellyPlayer(
+            x, y, 
+            COLORS.PLAYER_COLORS[i % COLORS.PLAYER_COLORS.length],
+            i === 0
+          );
+          this.players.push(player);
+        }
+
+        this.state = GameState.COUNTDOWN;
+        this.countdown = CONFIG.COUNTDOWN_TIME;
+        
+        // 倒计时
+        const countdownInterval = setInterval(() => {
+          soundManager.playCountdown();
+          this.countdown--;
+          if (this.countdown <= 0) {
+            clearInterval(countdownInterval);
+            this.state = GameState.PLAYING;
+            this.timeLeft = CONFIG.ROUND_TIME;
+          }
+        }, 1000);
+      }
+
+      update(deltaTime) {
+        if (this.state !== GameState.PLAYING) return;
+
+        // 更新时间
+        this.timeLeft -= deltaTime / 1000;
+
+        // 更新玩家
+        const alivePlayers = this.players.filter(p => p.isAlive);
+        for (const player of this.players) {
+          player.update(deltaTime, this.platform, this.obstacles, this.players);
+        }
+
+        // 更新障碍物
+        for (const obstacle of this.obstacles) {
+          obstacle.update(deltaTime);
+        }
+
+        // 检查游戏结束条件
+        const playerAlive = this.players.filter(p => p.isAlive && p.isPlayer).length;
+        if (playerAlive === 0) {
+          this.state = GameState.GAME_OVER;
+          soundManager.playFall();
+        } else if (alivePlayers.length === 1 && alivePlayers[0].isPlayer) {
+          this.state = GameState.ROUND_END;
+          soundManager.playWin();
+        } else if (this.timeLeft <= 0) {
+          // 时间到，活到最后的玩家获胜
+          const winner = this.players.filter(p => p.isAlive)[0];
+          if (winner && winner.isPlayer) {
+            this.state = GameState.ROUND_END;
+            soundManager.playWin();
+          } else {
+            this.state = GameState.GAME_OVER;
+          }
+        }
+
+        // 更新UI
+        document.getElementById('count').textContent = 
+          this.players.filter(p => p.isAlive).length;
+        document.getElementById('round').textContent = this.round;
+      }
+
+      draw() {
+        const ctx = this.ctx;
+        
+        // 清空画布
+        ctx.fillStyle = COLORS.BACKGROUND;
+        ctx.fillRect(0, 0, CONFIG.LOGICAL_WIDTH, CONFIG.LOGICAL_HEIGHT);
+
+        // 绘制背景装饰
+        this.drawBackground(ctx);
+
+        // 绘制平台
+        this.drawPlatform(ctx);
+
+        // 绘制障碍物
+        for (const obstacle of this.obstacles) {
+          obstacle.draw(ctx);
+        }
+
+        // 绘制玩家
+        for (const player of this.players) {
+          if (player.isAlive) {
+            player.draw(ctx);
+          }
+        }
+
+        // 绘制UI覆盖层
+        this.drawUI(ctx);
+      }
+
+      drawBackground(ctx) {
+        // 渐变背景
+        const gradient = ctx.createLinearGradient(0, 0, 0, CONFIG.LOGICAL_HEIGHT);
+        gradient.addColorStop(0, '#1a1a2e');
+        gradient.addColorStop(1, '#16213e');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, CONFIG.LOGICAL_WIDTH, CONFIG.LOGICAL_HEIGHT);
+
+        // 星星装饰
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        for (let i = 0; i < 50; i++) {
+          const x = (i * 137) % CONFIG.LOGICAL_WIDTH;
+          const y = (i * 89) % (CONFIG.LOGICAL_HEIGHT - 400);
+          const size = (i % 3) + 1;
+          ctx.beginPath();
+          ctx.arc(x, y, size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      drawPlatform(ctx) {
+        const p = this.platform;
+        
+        // 平台阴影
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.fillRect(p.x - p.width/2 + 10, p.y - p.height/2 + 10, p.width, p.height);
+
+        // 平台主体
+        const gradient = ctx.createLinearGradient(p.x, p.y - p.height/2, p.x, p.y + p.height/2);
+        gradient.addColorStop(0, COLORS.PLATFORM_EDGE);
+        gradient.addColorStop(0.3, COLORS.PLATFORM);
+        gradient.addColorStop(1, COLORS.PLATFORM_EDGE);
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(p.x - p.width/2, p.y - p.height/2, p.width, p.height);
+
+        // 平台边缘高光
+        ctx.strokeStyle = '#8a8aaa';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(p.x - p.width/2, p.y - p.height/2, p.width, p.height);
+
+        // 终点线
+        const finishX = p.x + p.width/2 - 80;
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(finishX, p.y - p.height/2 - 20, 10, p.height + 20);
+        
+        // 终点条纹
+        for (let i = 0; i < 5; i++) {
+          ctx.fillStyle = i % 2 === 0 ? '#000' : '#FFD700';
+          ctx.fillRect(finishX + 10, p.y - p.height/2 + i * 40, 30, 20);
+        }
+      }
+
+      drawUI(ctx) {
+        ctx.fillStyle = COLORS.TEXT;
+        ctx.textAlign = 'center';
+
+        if (this.state === GameState.MENU) {
+          // 标题
+          ctx.font = 'bold 80px "Microsoft YaHei", sans-serif';
+          ctx.fillStyle = '#FFD700';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+          ctx.shadowBlur = 10;
+          ctx.fillText('🍬 糖豆人', CONFIG.LOGICAL_WIDTH / 2, 350);
+          
+          ctx.font = 'bold 40px "Microsoft YaHei", sans-serif';
+          ctx.fillStyle = '#fff';
+          ctx.fillText('Jelly Man', CONFIG.LOGICAL_WIDTH / 2, 420);
+
+          // 开始提示
+          ctx.font = '30px "Microsoft YaHei", sans-serif';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          ctx.fillText('按任意键开始游戏', CONFIG.LOGICAL_WIDTH / 2, 550);
+          
+          // 游戏说明
+          ctx.font = '24px "Microsoft YaHei", sans-serif';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+          ctx.fillText('方向键/WASD 移动 | 空格 跳跃', CONFIG.LOGICAL_WIDTH / 2, 620);
+          ctx.fillText('躲避障碍物，坚持到最后！', CONFIG.LOGICAL_WIDTH / 2, 660);
+
+        } else if (this.state === GameState.COUNTDOWN) {
+          ctx.font = 'bold 120px "Microsoft YaHei", sans-serif';
+          ctx.fillStyle = '#FFD700';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+          ctx.shadowBlur = 20;
+          ctx.fillText(this.countdown.toString(), CONFIG.LOGICAL_WIDTH / 2, CONFIG.LOGICAL_HEIGHT / 2);
+
+        } else if (this.state === GameState.PLAYING) {
+          // 计时器
+          ctx.font = 'bold 40px "Microsoft YaHei", sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillStyle = this.timeLeft < 10 ? '#FF6B6B' : '#fff';
+          ctx.shadowBlur = 5;
+          ctx.fillText(`⏱ ${Math.ceil(this.timeLeft)}s`, CONFIG.LOGICAL_WIDTH - 50, 60);
+
+        } else if (this.state === GameState.ROUND_END) {
+          ctx.font = 'bold 60px "Microsoft YaHei", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#FFD700';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+          ctx.shadowBlur = 15;
+          ctx.fillText('🏆 胜利！', CONFIG.LOGICAL_WIDTH / 2, CONFIG.LOGICAL_HEIGHT / 2 - 30);
+          
+          ctx.font = '30px "Microsoft YaHei", sans-serif';
+          ctx.fillStyle = '#fff';
+          ctx.fillText('按任意键重新开始', CONFIG.LOGICAL_WIDTH / 2, CONFIG.LOGICAL_HEIGHT / 2 + 40);
+
+        } else if (this.state === GameState.GAME_OVER) {
+          ctx.font = 'bold 60px "Microsoft YaHei", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#FF6B6B';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+          ctx.shadowBlur = 15;
+          ctx.fillText('💀 游戏结束', CONFIG.LOGICAL_WIDTH / 2, CONFIG.LOGICAL_HEIGHT / 2 - 30);
+          
+          const aliveCount = this.players.filter(p => p.isAlive).length;
+          ctx.font = '30px "Microsoft YaHei", sans-serif';
+          ctx.fillStyle = '#fff';
+          ctx.fillText(`存活玩家: ${aliveCount}`, CONFIG.LOGICAL_WIDTH / 2, CONFIG.LOGICAL_HEIGHT / 2 + 20);
+          
+          ctx.font = '24px "Microsoft YaHei", sans-serif';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.fillText('按任意键重新开始', CONFIG.LOGICAL_WIDTH / 2, CONFIG.LOGICAL_HEIGHT / 2 + 70);
+        }
+      }
+
+      gameLoop(timestamp) {
+        const deltaTime = timestamp - this.lastTime;
+        this.lastTime = timestamp;
+
+        // 限制最大deltaTime防止卡顿导致的问题
+        const clampedDelta = Math.min(deltaTime, 50);
+
+        this.update(clampedDelta);
+        this.draw();
+
+        requestAnimationFrame((t) => this.gameLoop(t));
+      }
+    }
+
+    // ==================== 启动游戏 ====================
+    const soundManager = new SoundManager();
+    let keys = {};
+    
+    // 页面加载完成后启动游戏
+    window.addEventListener('load', () => {
+      new Game();
+    });
+  </script>
+</body>
+</html>
