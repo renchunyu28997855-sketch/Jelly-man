@@ -87,6 +87,10 @@
       <div id="playerCount">玩家: <span id="count">0</span></div>
       <div id="roundInfo">回合: <span id="round">1</span></div>
       <div id="levelSelect" style="margin-top: 10px;">
+        <select id="modeSelect" style="padding: 5px; font-size: 14px; border-radius: 5px; margin-bottom: 5px;">
+          <option value="1">单人模式 (vs AI)</option>
+          <option value="2">双人模式 (P1: WASD+空格, P2: 方向键+Enter)</option>
+        </select><br>
         <select id="levelSelectDropdown" style="padding: 5px; font-size: 14px; border-radius: 5px;">
           <option value="1">第1关: 草莓派对</option>
           <option value="2">第2关: 冰冻悬崖</option>
@@ -307,6 +311,7 @@
         this.isGrabbed = false;
         this.grabbedBy = null;
         this.grabCooldown = 0;
+        this.playerId = 0;
       }
       
       applyPowerup(type) {
@@ -389,12 +394,34 @@
         if (this.powerups.jump) currentJumpForce *= 1.5;
         if (this.powerups.size) currentSize = 1.5;
         
-        if (window.keys.ArrowLeft || window.keys.KeyA) this.vx -= 1.2;
-        if (window.keys.ArrowRight || window.keys.KeyD) this.vx += 1.2;
-        if ((window.keys.Space || window.keys.ArrowUp || window.keys.KeyW) && this.onGround) {
-          this.vy = currentJumpForce;
-          this.onGround = false;
-          soundManager.playJump();
+        // 根据玩家ID选择控制方案
+        if (this.playerId === 1) {
+          // P1: WASD + 空格
+          if (window.keys.KeyA) this.vx -= 1.5;
+          if (window.keys.KeyD) this.vx += 1.5;
+          if (window.keys.KeyW && this.onGround) {
+            this.vy = currentJumpForce;
+            this.onGround = false;
+            soundManager.playJump();
+          }
+        } else if (this.playerId === 2) {
+          // P2: 方向键 + Enter
+          if (window.keys.ArrowLeft) this.vx -= 1.5;
+          if (window.keys.ArrowRight) this.vx += 1.5;
+          if (window.keys.Enter && this.onGround) {
+            this.vy = currentJumpForce;
+            this.onGround = false;
+            soundManager.playJump();
+          }
+        } else {
+          // 单人模式默认控制
+          if (window.keys.ArrowLeft || window.keys.KeyA) this.vx -= 1.2;
+          if (window.keys.ArrowRight || window.keys.KeyD) this.vx += 1.2;
+          if ((window.keys.Space || window.keys.ArrowUp || window.keys.KeyW) && this.onGround) {
+            this.vy = currentJumpForce;
+            this.onGround = false;
+            soundManager.playJump();
+          }
         }
         
         // 抓取功能 (按G键)
@@ -527,24 +554,33 @@
           const minDist = this.radius + other.radius;
 
           if (dist < minDist && dist > 0) {
-            // 互相推挤
+            // 猛烈推挤！
             const overlap = minDist - dist;
             const angle = Math.atan2(dy, dx);
-            const pushX = Math.cos(angle) * overlap * 0.5;
-            const pushY = Math.sin(angle) * overlap * 0.5;
+            
+            // 大幅增加挤压力度
+            const pushForce = 3.0;
+            const pushX = Math.cos(angle) * overlap * pushForce;
+            const pushY = Math.sin(angle) * overlap * pushForce;
 
             this.x += pushX;
             this.y += pushY;
             other.x -= pushX;
             other.y -= pushY;
 
-            // 交换速度（弹性碰撞）
-            const tempVx = this.vx;
-            const tempVy = this.vy;
-            this.vx = other.vx * 0.8;
-            this.vy = other.vy * 0.8;
-            other.vx = tempVx * 0.8;
-            other.vy = tempVy * 0.8;
+            // 撞击速度加成
+            const impactSpeed = Math.abs(this.vx - other.vx) + Math.abs(this.vy - other.vy);
+            const bounceBonus = 1.5;
+            
+            this.vx += Math.cos(angle) * impactSpeed * bounceBonus;
+            this.vy += Math.sin(angle) * impactSpeed * bounceBonus;
+            other.vx -= Math.cos(angle) * impactSpeed * bounceBonus;
+            other.vy -= Math.sin(angle) * impactSpeed * bounceBonus;
+            
+            // 碰撞音效
+            if (impactSpeed > 5) {
+              soundManager.playHit();
+            }
           }
         }
       }
@@ -949,16 +985,47 @@
         
         this.players = [];
         
-        // 创建玩家（第一个是人类玩家）
-        for (let i = 0; i < CONFIG.PLAYER_COUNT; i++) {
-          const x = this.platform.x - this.platform.width/2 + 100 + i * 120;
-          const y = this.platform.y - this.platform.height/2 - 100;
-          const player = new JellyPlayer(
-            x, y, 
-            COLORS.PLAYER_COLORS[i % COLORS.PLAYER_COLORS.length],
-            i === 0
-          );
-          this.players.push(player);
+        // 获取游戏模式
+        const gameMode = parseInt(document.getElementById('modeSelect').value) || 1;
+        
+        // 创建玩家
+        if (gameMode === 2) {
+          // 双人模式：2个玩家 + 10个AI
+          for (let i = 0; i < 2; i++) {
+            const x = this.platform.x - 200 + i * 400;
+            const y = this.platform.y - this.platform.height/2 - 100;
+            const player = new JellyPlayer(
+              x, y, 
+              i === 0 ? '#FF6B6B' : '#4ECDC4',
+              true
+            );
+            player.playerId = i + 1;
+            this.players.push(player);
+          }
+          // 添加10个AI
+          for (let i = 0; i < 10; i++) {
+            const x = this.platform.x - this.platform.width/2 + 200 + i * 120;
+            const y = this.platform.y - this.platform.height/2 - 100;
+            const player = new JellyPlayer(
+              x, y, 
+              COLORS.PLAYER_COLORS[(i + 2) % COLORS.PLAYER_COLORS.length],
+              false
+            );
+            this.players.push(player);
+          }
+        } else {
+          // 单人模式：1个玩家 + 11个AI
+          for (let i = 0; i < CONFIG.PLAYER_COUNT; i++) {
+            const x = this.platform.x - this.platform.width/2 + 100 + i * 120;
+            const y = this.platform.y - this.platform.height/2 - 100;
+            const player = new JellyPlayer(
+              x, y, 
+              COLORS.PLAYER_COLORS[i % COLORS.PLAYER_COLORS.length],
+              i === 0
+            );
+            player.playerId = i === 0 ? 1 : 0;
+            this.players.push(player);
+          }
         }
 
         this.state = GameState.COUNTDOWN;
@@ -1032,7 +1099,7 @@
           item.update(deltaTime);
           if (!item.collected) {
             for (const player of this.players) {
-              if (player.isAlive && player.isPlayer) {
+              if (player.isAlive && player.playerId > 0) {
                 item.checkCollision(player);
               }
             }
