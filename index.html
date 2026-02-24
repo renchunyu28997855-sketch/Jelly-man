@@ -145,10 +145,10 @@
 
     // ==================== 道具配置 ====================
     const POWERUPS = [
-      { type: 'speed', name: '加速', duration: 5000, color: '#FFD700' },
-      { type: 'jump', name: '跳跃强化', duration: 5000, color: '#00FF00' },
-      { type: 'size', name: '变大', duration: 5000, color: '#FF4500' },
-      { type: 'grab', name: '抓取', duration: 8000, color: '#9400D3' }
+      { type: 'speed', name: '加速', duration: 8000, color: '#FFD700' },
+      { type: 'jump', name: '跳跃强化', duration: 8000, color: '#00FF00' },
+      { type: 'size', name: '变大', duration: 8000, color: '#FF4500' },
+      { type: 'grab', name: '抓取', duration: 12000, color: '#9400D3' }
     ];
 
     // ==================== 关卡配置 ====================
@@ -504,25 +504,32 @@
 
       handlePlatformCollision(platform) {
         const platTop = platform.y - platform.height / 2;
+        const platBottom = platform.y + platform.height / 2;
         const platLeft = platform.x - platform.width / 2;
         const platRight = platform.x + platform.width / 2;
 
-        // 检测是否在平台范围内
-        if (this.x > platLeft && this.x < platRight) {
-          // 从上方落下
-          if (this.y + this.radius > platTop && 
-              this.y - this.radius < platTop + 20 &&
-              this.vy > 0) {
-            this.y = platTop - this.radius;
-            if (this.vy > 5) {
-              soundManager.playLand();
-            }
-            this.vy = -this.vy * CONFIG.BOUNCE;
-            if (Math.abs(this.vy) < 2) {
-              this.vy = 0;
-              this.onGround = true;
-            }
+        // 检测是否在平台上方范围
+        const onPlatformX = this.x > platLeft && this.x < platRight;
+        
+        // 从上方落下
+        if (onPlatformX && this.y + this.radius > platTop && 
+            this.y - this.radius < platTop + 20 && this.vy > 0) {
+          this.y = platTop - this.radius;
+          if (this.vy > 5) {
+            soundManager.playLand();
           }
+          this.vy = -this.vy * CONFIG.BOUNCE;
+          if (Math.abs(this.vy) < 2) {
+            this.vy = 0;
+            this.onGround = true;
+          }
+        }
+        
+        // 防止被击穿到平台下方地板
+        if (onPlatformX && this.y > platBottom && this.vy > 0) {
+          // 在平台下方，给一个向上的力
+          this.y = platBottom - this.radius;
+          this.vy = -Math.abs(this.vy) * 0.8;
         }
         
         // 左右是悬崖，可以掉下去 - 不加边界
