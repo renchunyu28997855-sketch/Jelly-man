@@ -86,6 +86,20 @@
     <div id="ui">
       <div id="playerCount">玩家: <span id="count">0</span></div>
       <div id="roundInfo">回合: <span id="round">1</span></div>
+      <div id="levelSelect" style="margin-top: 10px;">
+        <select id="levelSelectDropdown" style="padding: 5px; font-size: 14px; border-radius: 5px;">
+          <option value="1">第1关: 草莓派对</option>
+          <option value="2">第2关: 冰冻悬崖</option>
+          <option value="3">第3关: 旋转风暴</option>
+          <option value="4">第4关: 障碍迷宫</option>
+          <option value="5">第5关: 闪电冲刺</option>
+          <option value="6">第6关: 马戏团</option>
+          <option value="7">第7关: 彩虹桥</option>
+          <option value="8">第8关: 火焰地狱</option>
+          <option value="9">第9关: 星光大道</option>
+          <option value="10">第10关: 最终决战</option>
+        </select>
+      </div>
     </div>
     <button id="soundToggle">🔊 音效: 开</button>
     <div id="instructions">方向键/WASD 移动 | 空格 跳跃</div>
@@ -689,8 +703,11 @@
         this.players = [];
         this.obstacles = [];
         this.platform = null;
-        this.round = 1;
-        this.levelName = "第1关: 草莓派对";
+        
+        // 读取选中的关卡
+        const selectedLevel = parseInt(document.getElementById('levelSelectDropdown').value) || 1;
+        this.round = selectedLevel;
+        
         this.timeLeft = CONFIG.ROUND_TIME;
         this.countdown = CONFIG.COUNTDOWN_TIME;
         this.lastTime = 0;
@@ -773,6 +790,13 @@
       }
 
       startGame(continueNextLevel = false) {
+        // 重新初始化关卡（如果是从菜单开始）
+        if (!continueNextLevel) {
+          const selectedLevel = parseInt(document.getElementById('levelSelectDropdown').value) || 1;
+          this.round = selectedLevel;
+          this.initObstacles();
+        }
+        
         this.players = [];
         
         // 创建玩家（第一个是人类玩家）
