@@ -408,7 +408,7 @@
           // P2: 方向键 + Enter
           if (window.keys.ArrowLeft) this.vx -= 1.5;
           if (window.keys.ArrowRight) this.vx += 1.5;
-          if (window.keys.Enter && this.onGround) {
+          if ((window.keys.Enter || window.keys.ArrowUp) && this.onGround) {
             this.vy = currentJumpForce;
             this.onGround = false;
             soundManager.playJump();
@@ -504,13 +504,8 @@
 
       handlePlatformCollision(platform) {
         const platTop = platform.y - platform.height / 2;
-        const platBottom = platform.y + platform.height / 2;
         const platLeft = platform.x - platform.width / 2;
         const platRight = platform.x + platform.width / 2;
-        
-        // 地图上下边界
-        const minY = 50;
-        const maxY = CONFIG.LOGICAL_HEIGHT - 100;
 
         // 检测是否在平台范围内
         if (this.x > platLeft && this.x < platRight) {
@@ -528,38 +523,14 @@
               this.onGround = true;
             }
           }
-          
-          // 防止从平台下方被击穿到地板下
-          if (this.y > platBottom - this.radius && this.vy > 0) {
-            this.y = platBottom - this.radius;
-            this.vy = -Math.abs(this.vy) * 0.5;
-          }
         }
         
-        // 平台边缘反弹
-        if (this.y > platTop - this.radius * 2) {
-          // 左边缘反弹
-          if (this.x - this.radius < platLeft && this.vx < 0) {
-            this.x = platLeft + this.radius;
-            this.vx = -this.vx * CONFIG.BOUNCE;
-            soundManager.playHit();
-          }
-          // 右边缘反弹
-          if (this.x + this.radius > platRight && this.vx > 0) {
-            this.x = platRight - this.radius;
-            this.vx = -this.vx * CONFIG.BOUNCE;
-            soundManager.playHit();
-          }
-        }
+        // 左右是悬崖，可以掉下去 - 不加边界
         
-        // 地图上下边界限制
-        if (this.y + this.radius > platBottom) {
-          this.y = platBottom - this.radius;
-          this.vy = -Math.abs(this.vy) * 0.5;
-        }
-        if (this.y - this.radius < minY) {
-          this.y = minY + this.radius;
-          this.vy = Math.abs(this.vy) * 0.5;
+        // 顶部天空边界（防止飞太高）
+        if (this.y < 100) {
+          this.y = 100;
+          this.vy = Math.abs(this.vy) * 0.3;
         }
       }
 
