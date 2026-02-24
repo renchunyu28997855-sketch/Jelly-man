@@ -749,9 +749,12 @@
           soundManager.init();
           
           if (this.state === GameState.MENU ||
-              this.state === GameState.ROUND_END || 
               this.state === GameState.GAME_OVER) {
+            this.round = 1;
             this.startGame();
+          } else if (this.state === GameState.ROUND_END) {
+            // 继续下一关
+            this.startNextLevel();
           }
         });
 
@@ -769,10 +772,44 @@
         });
       }
 
-      startGame() {
+      startGame(continueNextLevel = false) {
         this.players = [];
         
         // 创建玩家（第一个是人类玩家）
+        for (let i = 0; i < CONFIG.PLAYER_COUNT; i++) {
+          const x = this.platform.x - this.platform.width/2 + 100 + i * 120;
+          const y = this.platform.y - this.platform.height/2 - 100;
+          const player = new JellyPlayer(
+            x, y, 
+            COLORS.PLAYER_COLORS[i % COLORS.PLAYER_COLORS.length],
+            i === 0
+          );
+          this.players.push(player);
+        }
+
+        this.state = GameState.COUNTDOWN;
+        this.countdown = CONFIG.COUNTDOWN_TIME;
+        
+        // 倒计时
+        const countdownInterval = setInterval(() => {
+          soundManager.playCountdown();
+          this.countdown--;
+          if (this.countdown <= 0) {
+            clearInterval(countdownInterval);
+            this.state = GameState.PLAYING;
+            this.timeLeft = CONFIG.ROUND_TIME;
+          }
+        }, 1000);
+      }
+
+      startNextLevel() {
+        // 继续下一关，不重置回合数
+        this.players = [];
+        
+        // 重新初始化障碍物（应用新关卡配置）
+        this.initObstacles();
+        
+        // 创建玩家
         for (let i = 0; i < CONFIG.PLAYER_COUNT; i++) {
           const x = this.platform.x - this.platform.width/2 + 100 + i * 120;
           const y = this.platform.y - this.platform.height/2 - 100;
