@@ -123,6 +123,59 @@
       TEXT_SHADOW: 'rgba(0, 0, 0, 0.5)'
     };
 
+
+    // ==================== 关卡配置 ====================
+    const LEVELS = [
+      { name: '第1关: 草莓派对', time: 60, obstacles: [
+        { type: 'spinner', x: 600, y: 350 }, { type: 'spinner', x: 1320, y: 350 },
+        { type: 'swing', x: 760, y: 450 }, { type: 'swing', x: 960, y: 450 }, { type: 'swing', x: 1160, y: 450 }
+      ]},
+      { name: '第2关: 冰冻悬崖', time: 55, obstacles: [
+        { type: 'spinner', x: 500, y: 300 }, { type: 'spinner', x: 960, y: 300 }, { type: 'spinner', x: 1420, y: 300 },
+        { type: 'swing', x: 700, y: 450 }, { type: 'swing', x: 1220, y: 450 }
+      ]},
+      { name: '第3关: 旋转风暴', time: 50, obstacles: [
+        { type: 'spinner', x: 400, y: 250 }, { type: 'spinner', x: 700, y: 250 }, { type: 'spinner', x: 1000, y: 250 },
+        { type: 'spinner', x: 1300, y: 250 }, { type: 'spinner', x: 1600, y: 250 },
+        { type: 'swing', x: 550, y: 450 }, { type: 'swing', x: 850, y: 450 }, { type: 'swing', x: 1150, y: 450 }, { type: 'swing', x: 1450, y: 450 }
+      ]},
+      { name: '第4关: 障碍迷宫', time: 55, obstacles: [
+        { type: 'spinner', x: 600, y: 350 }, { type: 'spinner', x: 1320, y: 350 },
+        { type: 'swing', x: 400, y: 400 }, { type: 'swing', x: 600, y: 500 }, { type: 'swing', x: 800, y: 400 },
+        { type: 'swing', x: 1000, y: 500 }, { type: 'swing', x: 1200, y: 400 }, { type: 'swing', x: 1400, y: 500 }
+      ]},
+      { name: '第5关: 闪电冲刺', time: 45, obstacles: [
+        { type: 'spinner', x: 480, y: 280 }, { type: 'spinner', x: 720, y: 280 }, { type: 'spinner', x: 960, y: 280 },
+        { type: 'spinner', x: 1200, y: 280 }, { type: 'spinner', x: 1440, y: 280 },
+        { type: 'swing', x: 600, y: 420 }, { type: 'swing', x: 840, y: 420 }, { type: 'swing', x: 1080, y: 420 }, { type: 'swing', x: 1320, y: 420 }
+      ]},
+      { name: '第6关: 马戏团', time: 50, obstacles: [
+        { type: 'spinner', x: 500, y: 200 }, { type: 'spinner', x: 960, y: 200 }, { type: 'spinner', x: 1420, y: 200 },
+        { type: 'swing', x: 350, y: 350 }, { type: 'swing', x: 550, y: 450 }, { type: 'swing', x: 750, y: 350 },
+        { type: 'swing', x: 1170, y: 350 }, { type: 'swing', x: 1370, y: 450 }, { type: 'swing', x: 1570, y: 350 }
+      ]},
+      { name: '第7关: 彩虹桥', time: 55, obstacles: [
+        { type: 'spinner', x: 600, y: 300 }, { type: 'spinner', x: 960, y: 300 }, { type: 'spinner', x: 1320, y: 300 },
+        { type: 'swing', x: 400, y: 400 }, { type: 'swing', x: 600, y: 500 }, { type: 'swing', x: 800, y: 400 },
+        { type: 'swing', x: 1000, y: 500 }, { type: 'swing', x: 1200, y: 400 }, { type: 'swing', x: 1400, y: 500 }
+      ]},
+      { name: '第8关: 火焰地狱', time: 45, obstacles: [
+        { type: 'spinner', x: 480, y: 250 }, { type: 'spinner', x: 800, y: 250 }, { type: 'spinner', x: 1120, y: 250 }, { type: 'spinner', x: 1440, y: 250 },
+        { type: 'swing', x: 640, y: 400 }, { type: 'swing', x: 960, y: 400 }, { type: 'swing', x: 1280, y: 400 }
+      ]},
+      { name: '第9关: 星光大道', time: 50, obstacles: [
+        { type: 'spinner', x: 400, y: 280 }, { type: 'spinner', x: 680, y: 280 }, { type: 'spinner', x: 960, y: 280 },
+        { type: 'spinner', x: 1240, y: 280 }, { type: 'spinner', x: 1520, y: 280 },
+        { type: 'swing', x: 540, y: 450 }, { type: 'swing', x: 820, y: 450 }, { type: 'swing', x: 1100, y: 450 }, { type: 'swing', x: 1380, y: 450 }
+      ]},
+      { name: '第10关: 最终决战', time: 60, obstacles: [
+        { type: 'spinner', x: 320, y: 200 }, { type: 'spinner', x: 580, y: 200 }, { type: 'spinner', x: 840, y: 200 },
+        { type: 'spinner', x: 1100, y: 200 }, { type: 'spinner', x: 1360, y: 200 }, { type: 'spinner', x: 1620, y: 200 },
+        { type: 'swing', x: 450, y: 400 }, { type: 'swing', x: 710, y: 400 }, { type: 'swing', x: 970, y: 400 },
+        { type: 'swing', x: 1230, y: 400 }, { type: 'swing', x: 1490, y: 400 }
+      ]}
+    ];
+
     const GameState = {
       MENU: 'menu',
       COUNTDOWN: 'countdown',
@@ -275,9 +328,9 @@
       }
 
       handleInput() {
-        if (keys.ArrowLeft || keys.KeyA) this.vx -= 1.2;
-        if (keys.ArrowRight || keys.KeyD) this.vx += 1.2;
-        if ((keys.Space || keys.ArrowUp || keys.KeyW) && this.onGround) {
+        if (window.keys.ArrowLeft || window.keys.KeyA) this.vx -= 1.2;
+        if (window.keys.ArrowRight || window.keys.KeyD) this.vx += 1.2;
+        if ((window.keys.Space || window.keys.ArrowUp || window.keys.KeyW) && this.onGround) {
           this.vy = CONFIG.JUMP_FORCE;
           this.onGround = false;
           soundManager.playJump();
@@ -637,6 +690,7 @@
         this.obstacles = [];
         this.platform = null;
         this.round = 1;
+        this.levelName = "第1关: 草莓派对";
         this.timeLeft = CONFIG.ROUND_TIME;
         this.countdown = CONFIG.COUNTDOWN_TIME;
         this.lastTime = 0;
@@ -671,22 +725,17 @@
       initObstacles() {
         this.obstacles = [];
         
-        // 添加旋转风车
-        for (let i = 0; i < 2; i++) {
-          this.obstacles.push(new Obstacle(
-            CONFIG.LOGICAL_WIDTH / 2 - 300 + i * 600,
-            350,
-            'spinner'
-          ));
-        }
-
-        // 添加摆动球
-        for (let i = 0; i < 3; i++) {
-          this.obstacles.push(new Obstacle(
-            CONFIG.LOGICAL_WIDTH / 2 - 200 + i * 200,
-            450,
-            'swing'
-          ));
+        // 获取当前关卡配置
+        const levelIndex = Math.min(this.round - 1, LEVELS.length - 1);
+        const level = LEVELS[levelIndex];
+        
+        // 设置关卡时间
+        CONFIG.ROUND_TIME = level.time;
+        this.levelName = level.name;
+        
+        // 根据关卡配置添加障碍物
+        for (const obs of level.obstacles) {
+          this.obstacles.push(new Obstacle(obs.x, obs.y, obs.type));
         }
       }
 
@@ -699,7 +748,8 @@
           // 初始化音效（浏览器策略要求用户交互）
           soundManager.init();
           
-          if (this.state === GameState.MENU || 
+          if (this.state === GameState.MENU ||
+              this.state === GameState.ROUND_END || 
               this.state === GameState.GAME_OVER) {
             this.startGame();
           }
@@ -772,12 +822,22 @@
           this.state = GameState.GAME_OVER;
           soundManager.playFall();
         } else if (alivePlayers.length === 1 && alivePlayers[0].isPlayer) {
+          if (this.round >= 10) {
+            this.levelName = '🎉 通关成功！';
+          } else {
+            this.round++;
+          }
           this.state = GameState.ROUND_END;
           soundManager.playWin();
         } else if (this.timeLeft <= 0) {
           // 时间到，活到最后的玩家获胜
           const winner = this.players.filter(p => p.isAlive)[0];
           if (winner && winner.isPlayer) {
+            if (this.round >= 10) {
+              this.levelName = '🎉 通关成功！';
+            } else {
+              this.round++;
+            }
             this.state = GameState.ROUND_END;
             soundManager.playWin();
           } else {
@@ -788,7 +848,7 @@
         // 更新UI
         document.getElementById('count').textContent = 
           this.players.filter(p => p.isAlive).length;
-        document.getElementById('round').textContent = this.round;
+        document.getElementById('round').textContent = this.round + ' - ' + this.levelName;
       }
 
       draw() {
