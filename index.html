@@ -102,7 +102,7 @@
       </div>
     </div>
     <button id="soundToggle">🔊 音效: 开</button>
-    <div id="instructions">方向键/WASD 移动 | 空格 跳跃</div>
+    <div id="instructions">方向键/WASD 移动 | 空格 跳跃 | G 抓取 | 收集道具变强！</div>
   </div>
 
   <script>
@@ -137,6 +137,15 @@
       TEXT_SHADOW: 'rgba(0, 0, 0, 0.5)'
     };
 
+
+
+    // ==================== 道具配置 ====================
+    const POWERUPS = [
+      { type: 'speed', name: '加速', duration: 5000, color: '#FFD700' },
+      { type: 'jump', name: '跳跃强化', duration: 5000, color: '#00FF00' },
+      { type: 'size', name: '变大', duration: 5000, color: '#FF4500' },
+      { type: 'grab', name: '抓取', duration: 8000, color: '#9400D3' }
+    ];
 
     // ==================== 关卡配置 ====================
     const LEVELS = [
@@ -294,10 +303,39 @@
         this.targetY = y;
         this.onGround = false;
         this.expression = 'normal';
+        this.powerups = { speed: 0, jump: 0, size: 0, grab: 0 };
+        this.isGrabbed = false;
+        this.grabbedBy = null;
+        this.grabCooldown = 0;
+      }
+      
+      applyPowerup(type) {
+        this.powerups[type] = Date.now() + POWERUPS.find(p => p.type === type).duration;
+      }
+      
+      updatePowerups() {
+        const now = Date.now();
+        for (const key in this.powerups) {
+          if (this.powerups[key] && this.powerups[key] < now) {
+            this.powerups[key] = 0;
+          }
+        }
       }
 
       update(deltaTime, platform, obstacles, players) {
         if (!this.isAlive) return;
+
+        // 更新道具状态
+        this.updatePowerups();
+        
+        // 如果被抓取
+        if (this.isGrabbed && this.grabbedBy) {
+          this.x = this.grabbedBy.x + (this.x > this.grabbedBy.x ? 30 : -30);
+          this.y = this.grabbedBy.y - 20;
+          this.vx = 0;
+          this.vy = 0;
+          return;
+        }
 
         // 果冻摆动动画
         this.wobble += this.wobbleSpeed * deltaTime;
@@ -307,7 +345,7 @@
 
         // 如果是玩家，响应输入
         if (this.isPlayer) {
-          this.handleInput();
+          this.handleInput(players);
         } else {
           // AI 行为
           this.handleAI(platform, obstacles, players);
@@ -341,17 +379,64 @@
         }
       }
 
-      handleInput() {
+      handleInput(players) {
+        // 应用道具效果
+        let currentMoveSpeed = CONFIG.MOVE_SPEED;
+        let currentJumpForce = CONFIG.JUMP_FORCE;
+        let currentSize = 1;
+        
+        if (this.powerups.speed) currentMoveSpeed *= 1.8;
+        if (this.powerups.jump) currentJumpForce *= 1.5;
+        if (this.powerups.size) currentSize = 1.5;
+        
         if (window.keys.ArrowLeft || window.keys.KeyA) this.vx -= 1.2;
         if (window.keys.ArrowRight || window.keys.KeyD) this.vx += 1.2;
         if ((window.keys.Space || window.keys.ArrowUp || window.keys.KeyW) && this.onGround) {
-          this.vy = CONFIG.JUMP_FORCE;
+          this.vy = currentJumpForce;
           this.onGround = false;
           soundManager.playJump();
         }
+        
+        // 抓取功能 (按G键)
+        if ((window.keys.KeyG || window.keys.KeyE) && this.powerups.grab) {
+          this.tryGrab(players);
+        }
 
         // 限制速度
-        this.vx = Math.max(-CONFIG.MOVE_SPEED, Math.min(CONFIG.MOVE_SPEED, this.vx));
+        this.vx = Math.max(-currentMoveSpeed, Math.min(currentMoveSpeed, this.vx));
+        
+        // 应用大小
+        this.scaleX = (1 + Math.sin(this.wobble) * 0.08) * currentSize;
+        this.scaleY = (1 - Math.sin(this.wobble) * 0.08) * currentSize;
+      }
+      
+      tryGrab(players) {
+        if (this.grabCooldown > 0) return;
+        
+        for (const other of players) {
+          if (other === this || !other.isAlive || other.isGrabbed) continue;
+          
+          const dx = other.x - this.x;
+          const dy = other.y - this.y;
+          const dist = Math.hypot(dx, dy);
+          
+          if (dist < this.radius * 3) {
+            other.isGrabbed = true;
+            other.grabbedBy = this;
+            this.grabCooldown = 30;
+            soundManager.playHit();
+            
+            setTimeout(() => {
+              if (other.isGrabbed) {
+                other.isGrabbed = false;
+                other.grabbedBy = null;
+                other.vx = this.vx * 2;
+                other.vy = -10;
+              }
+            }, 1500);
+            break;
+          }
+        }
       }
 
       handleAI(platform, obstacles, players) {
@@ -605,6 +690,62 @@
       }
     }
 
+    // ==================== 道具类 ====================
+    class PowerupItem {
+      constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.type = type;
+        this.powerup = POWERUPS.find(p => p.type === type);
+        this.radius = 25;
+        this.collected = false;
+        this.pulse = Math.random() * Math.PI * 2;
+      }
+      
+      update(deltaTime) {
+        this.pulse += 0.1 * deltaTime;
+      }
+      
+      draw(ctx) {
+        if (this.collected) return;
+        
+        const pulse = Math.sin(this.pulse) * 0.2 + 1;
+        const r = this.radius * pulse;
+        
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        
+        ctx.shadowColor = this.powerup.color;
+        ctx.shadowBlur = 20;
+        
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fillStyle = this.powerup.color;
+        ctx.fill();
+        
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        
+        ctx.restore();
+      }
+      
+      checkCollision(player) {
+        if (this.collected) return false;
+        
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        
+        if (dist < player.radius + this.radius) {
+          this.collected = true;
+          player.applyPowerup(this.type);
+          return true;
+        }
+        return false;
+      }
+    }
+
     // ==================== 障碍物类 ====================
     class Obstacle {
       constructor(x, y, type) {
@@ -741,6 +882,7 @@
 
       initObstacles() {
         this.obstacles = [];
+        this.powerupItems = [];
         
         // 获取当前关卡配置
         const levelIndex = Math.min(this.round - 1, LEVELS.length - 1);
@@ -753,6 +895,16 @@
         // 根据关卡配置添加障碍物
         for (const obs of level.obstacles) {
           this.obstacles.push(new Obstacle(obs.x, obs.y, obs.type));
+        }
+        
+        // 添加道具
+        const powerupTypes = ['speed', 'jump', 'size', 'grab'];
+        const numPowerups = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < numPowerups; i++) {
+          const type = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
+          const x = CONFIG.PLATFORM_WIDTH/2 - 600 + Math.random() * 1200;
+          const y = CONFIG.LOGICAL_HEIGHT - 350;
+          this.powerupItems.push(new PowerupItem(x, y, type));
         }
       }
 
@@ -790,12 +942,10 @@
       }
 
       startGame(continueNextLevel = false) {
-        // 重新初始化关卡（如果是从菜单开始）
-        if (!continueNextLevel) {
-          const selectedLevel = parseInt(document.getElementById('levelSelectDropdown').value) || 1;
-          this.round = selectedLevel;
-          this.initObstacles();
-        }
+        // 重新初始化关卡
+        const selectedLevel = parseInt(document.getElementById('levelSelectDropdown').value) || 1;
+        this.round = selectedLevel;
+        this.initObstacles();
         
         this.players = [];
         
@@ -876,6 +1026,18 @@
         for (const obstacle of this.obstacles) {
           obstacle.update(deltaTime);
         }
+        
+        // 更新道具
+        for (const item of this.powerupItems) {
+          item.update(deltaTime);
+          if (!item.collected) {
+            for (const player of this.players) {
+              if (player.isAlive && player.isPlayer) {
+                item.checkCollision(player);
+              }
+            }
+          }
+        }
 
         // 检查游戏结束条件
         const playerAlive = this.players.filter(p => p.isAlive && p.isPlayer).length;
@@ -928,6 +1090,11 @@
         // 绘制障碍物
         for (const obstacle of this.obstacles) {
           obstacle.draw(ctx);
+        }
+        
+        // 绘制道具
+        for (const item of this.powerupItems) {
+          item.draw(ctx);
         }
 
         // 绘制玩家
